@@ -118,6 +118,17 @@ def convert_sentence_to_token(sentence, seq_length, tokenizer):
             else:
                 position.append(start_pos+index)
                 words.append(tokenized_text[index])
+    
+      if isSpecial:	
+          isSpecial = False	
+          special.append(start_pos+index+1)	
+          position.append(special)	
+          whole_word += tokenized_text[index+1]	
+          whole_word = whole_word.replace('##','')	
+          words.append(whole_word)	
+      else:	
+          position.append(start_pos+index+1)	
+          words.append(tokenized_text[index+1])
        
     return tokenized_text, words, position
 
