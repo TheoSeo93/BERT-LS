@@ -54,6 +54,13 @@ class InputFeatures(object):
         self.input_mask = input_mask
         self.input_type_ids = input_type_ids
 
+def flat2gen(alist):
+    for item in alist:
+        if isinstance(item, list):
+            for subitem in item: yield subitem
+        else:
+            yield item
+
 def convert_sentence_to_token(sentence, seq_length, tokenizer):
   
     tokenized_text = tokenizer.tokenize(sentence)
@@ -61,76 +68,55 @@ def convert_sentence_to_token(sentence, seq_length, tokenizer):
     if len(tokenized_text) > seq_length - 2:
         tokenized_text = tokenized_text[0:(seq_length - 2)]
 
-    position =[]
-    special =[]
-    isSpecial = False
-
-    whole_word = ''
-    words = []
-
-    start_pos =  len(tokenized_text)  + 2
-
-    connect_sign = 0
-    for index in range(len(tokenized_text)-1):
-        
-        if(tokenized_text[index+1]=="-" and tokenized_text[index+2]!="-"):
-            
-            whole_word += tokenized_text[index]
-            special.append(start_pos+index)
-            continue
-
-        if(tokenized_text[index]=="-"):
-            
-            whole_word += tokenized_text[index]
-            special.append(start_pos+index)
-
-            if(tokenized_text[index-1]=="-"):
-                words.append(whole_word)
-                position.append(special)
-                special = []
-                whole_word = ''
-            continue
-
-        if(tokenized_text[index]!="-" and tokenized_text[index-1]=="-"):
-            whole_word += tokenized_text[index]
-            words.append(whole_word)
-            whole_word = ''
-            special.append(start_pos+index)
-            position.append(special)
-            special = []
-            continue    
-
-        if(tokenized_text[index+1][0:2]=="##"):
-            special.append(start_pos+index)
-            whole_word += tokenized_text[index]
-            isSpecial = True
-            continue
+          # words : tokens removed '##' and concatenated. For '-', concatenate its neighboring word tokens.
+        words = []
+        if tokenizer.do_basic_tokenize:
+            for token in tokenizer.basic_tokenizer.tokenize(sent):
+                words.append(token)
         else:
-            if isSpecial:
-                isSpecial = False
-                special.append(start_pos+index)
-                position.append(special)
-                whole_word += tokenized_text[index]
-                whole_word = whole_word.replace('##','')
-                words.append(whole_word)
-                whole_word = ''
-                special =  []
+            words = tokenizer.wordpiece_tokenizer.tokenize(sent)
+
+        # Bert tokens
+        tokens = tokenizer.tokenize(sent)
+        word_length = len(words)
+        word_index = 0
+        bert_index = 0
+        # Position list :
+        # Represents the positions of words concatenated. ex) ['it','g','##li','##tters'] [0,[1,2,3]]
+
+        position = []
+        # Removes '##'
+        while word_index < word_length:
+            nltk_token = words[word_index]
+            bert_token = tokens[bert_index]
+            if nltk_token.lower() != bert_token.lower():
+                next_bert_index = bert_index + 1
+                while next_bert_index < len(tokens) and tokens[next_bert_index][0:2] == '##':
+                    next_bert_index += 1
+                word_index += 1
+                position_multiple = [pos for pos in range(bert_index, next_bert_index)]
+                position.append(position_multiple)
+                bert_index = next_bert_index
             else:
-                position.append(start_pos+index)
-                words.append(tokenized_text[index])
-    
-      if isSpecial:	
-          isSpecial = False	
-          special.append(start_pos+index+1)	
-          position.append(special)	
-          whole_word += tokenized_text[index+1]	
-          whole_word = whole_word.replace('##','')	
-          words.append(whole_word)	
-      else:	
-          position.append(start_pos+index+1)	
-          words.append(tokenized_text[index+1])
-       
-    return tokenized_text, words, position
+                position.append(bert_index)
+                bert_index += 1
+                word_index += 1
+
+        # Concatenate the word tokens with '-'
+        word_index = 0
+        position_index = 0
+        while word_index < word_length:
+            nltk_token = words[word_index]
+            if nltk_token == '-':
+                words[word_index - 1:word_index + 2] = [''.join(words[word_index - 1:word_index + 2])]
+                word_length -= 2
+                position[position_index - 1:position_index + 2] = [
+                    list(flat2gen(position[position_index - 1:position_index + 2]))]
+            else:
+                word_index += 1
+                position_index += 1
+
+        return tokens, words, position
 
 def convert_whole_word_to_feature(tokens_a, mask_position, seq_length, tokenizer):
     """Loads a data file into a list of `InputFeature`s."""
